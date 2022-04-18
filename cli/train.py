@@ -26,6 +26,7 @@ import math
 import os
 import random
 from functools import partial
+import token
 from packaging import version
 
 # Import from third party libraries
@@ -38,6 +39,8 @@ from tqdm.auto import tqdm
 
 import wandb
 import transformers
+from transformers import AutoModelWithLMHead, AutoTokenizer
+
 
 # Imports from our module
 from transformer_mt.modeling_transformer import TransfomerEncoderDecoderModel
@@ -96,13 +99,13 @@ def parse_args():
     parser.add_argument(
         "--source_lang",
         type=str,
-        required=True,
+        # required=True,
         help="Source language id for translation.",
     )
     parser.add_argument(
         "--target_lang",
         type=str,
-        required=True,
+        # required=True,
         help="Target language id for translation.",
     )
     # Data arguments
@@ -278,11 +281,12 @@ def parse_args():
 
     args = parser.parse_args()
 
-    if f"{args.source_lang}_tokenizer" not in os.listdir(args.output_dir):
-        raise ValueError(f"The source tokenizer is not found in {args.output_dir}")
+    # comment these out... we're loading our own tokenizer straight from huggingface
+    # if f"{args.source_lang}_tokenizer" not in os.listdir(args.output_dir):
+    #     raise ValueError(f"The source tokenizer is not found in {args.output_dir}")
 
-    if f"{args.target_lang}_tokenizer" not in os.listdir(args.output_dir):
-        raise ValueError(f"The target tokenizer is not found in {args.output_dir}")
+    # if f"{args.target_lang}_tokenizer" not in os.listdir(args.output_dir):
+    #     raise ValueError(f"The target tokenizer is not found in {args.output_dir}")
 
     return args
 
@@ -298,22 +302,30 @@ def preprocess_function(
     """Tokenize, truncate and add special tokens to the examples. Shift the target text by one token.
 
     Args:
-        examples: A dictionary with a single key "translation",
-            which is a list of dictionaries with keys meaning language codes.
+        examples: A dictionary with all the batch data that we need.
+        keys:
+            "db_id": database id
+            "query": sql query
+            "question": natural language question (english)
+            "query_toks": tokenized query
+            "question_toks": tokenized question
 
             For example:
-            {"translation": [
-                {"en": "Hello", "fr": "Bonjour"},
-                {"en": "How are you?", "fr": "Comment allez-vous?"},
-            ]}
+            {
+            "db_id": ['department_management', ...]
+            "query": ['SELECT COUNT(*) FROM head WHERE age > 56', ...]
+            "question": ['How many heads of the departments are older than 56 ?', ...]
+            "query_toks": [ ['SELECT', 'count', '(', '*', ')', 'FROM', 'head', 'WHERE', 'age', '>', '56'], ... ]
+            "question_toks": [ ['How', 'many', 'heads', 'of', 'the', 'departments', 'are', 'older', 'than', '56', '?'], ... ]
+            }
         source_lang: The language code of the source language.
         target_lang: The language code of the target language.
         max_seq_length: The maximum total sequence length (in tokens) for source and target texts.
         source_tokenizer: The tokenizer to use for the source language.
         target_tokenizer: The tokenizer to use for the target language.
     """
-    inputs = [ex[source_lang] for ex in examples["translation"]]
-    targets = [ex[target_lang] for ex in examples["translation"]]
+    inputs = examples[source_lang]
+    targets = examples[target_lang]
 
     model_inputs = source_tokenizer(inputs, max_length=max_seq_length, truncation=True)
 
@@ -457,9 +469,9 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load the datasets
-    raw_datasets = load_dataset(args.dataset_name, args.dataset_config_name)
+    raw_datasets = load_dataset("spider")  # spider is the text to sql dataset
     # raw_datasets = load_dataset('json', data_files='outp.json')
-    if "validation" not in raw_datasets:
+    if "validation" not in raw_datasets:  # spider has this split done already
         # will create "train" and "test" subsets
         # fix seed to make sure that the split is reproducible
         # note that we should use the same seed here and in create_tokenizer.py
@@ -472,35 +484,45 @@ def main():
     # Part 2: Create the model and load the tokenizers
     ###############################################################################
 
-    src_tokenizer_path = os.path.join(args.output_dir, f"{args.source_lang}_tokenizer")
-    tgt_tokenizer_path = os.path.join(args.output_dir, f"{args.target_lang}_tokenizer")
+    # src_tokenizer_path = os.path.join(args.output_dir, f"{args.source_lang}_tokenizer")
+    # tgt_tokenizer_path = os.path.join(args.output_dir, f"{args.target_lang}_tokenizer")
+
     # Task 4.1: Load source and target tokenizers from the variables above
     # using transformers.PreTrainedTokenizerFast.from_pretrained
     # https://huggingface.co/docs/transformers/v4.16.2/en/main_classes/tokenizer#transformers.PreTrainedTokenizerFast
     # Our implementation is two lines.
     # YOUR CODE STARTS HERE
 
-    source_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
-        pretrained_model_name_or_path=src_tokenizer_path
-    )
-    target_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
-        pretrained_model_name_or_path=tgt_tokenizer_path
-    )
+    # source_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
+    #     pretrained_model_name_or_path=src_tokenizer_path
+    # )
+    # target_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
+    #     pretrained_model_name_or_path=tgt_tokenizer_path
+    # )
+
+    # we can use the same tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("Salesforce/codet5-base")
+    source_tokenizer, target_tokenizer = tokenizer, tokenizer
+
     # YOUR CODE ENDS HERE
 
     # Task 4.2: Create TransformerEncoderDecoder object
     # Provide all of the TransformerLM initialization arguments from args.
     # Move model to the device we use for training
     # YOUR CODE STARTS HERE
-    model = TransfomerEncoderDecoderModel(
-        num_layers=args.num_layers,
-        hidden=args.hidden_size,
-        num_heads=args.num_heads,
-        fcn_hidden=args.fcn_hidden,
-        max_seq_len=args.max_seq_length,
-        src_vocab_size=source_tokenizer.vocab_size,
-        tgt_vocab_size=target_tokenizer.vocab_size,
-    ).to(args.device)
+    # model = TransfomerEncoderDecoderModel(
+    #     num_layers=args.num_layers,
+    #     hidden=args.hidden_size,
+    #     num_heads=args.num_heads,
+    #     fcn_hidden=args.fcn_hidden,
+    #     max_seq_len=args.max_seq_length,
+    #     src_vocab_size=source_tokenizer.vocab_size,
+    #     tgt_vocab_size=target_tokenizer.vocab_size,
+    # ).to(args.device)
+
+    model = AutoModelWithLMHead.from_pretrained("Salesforce/codet5-base").to(
+        args.device
+    )
 
     # YOUR CODE ENDS HERE
 
@@ -520,11 +542,11 @@ def main():
     # It is better to do this instead of defining a function right here (as we did in the previous homework)
     preprocess_function_wrapped = partial(
         preprocess_function,
-        source_lang=args.source_lang,
-        target_lang=args.target_lang,
+        source_lang="question",
+        target_lang="query",
         max_seq_length=args.max_seq_length,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
+        source_tokenizer=tokenizer,
+        target_tokenizer=tokenizer,
     )
 
     processed_datasets = raw_datasets.map(
@@ -539,7 +561,7 @@ def main():
     train_dataset = processed_datasets["train"]
     eval_dataset = (
         processed_datasets["validation"]
-        if "validaion" in processed_datasets
+        if "validation" in processed_datasets
         else processed_datasets["test"]
     )
 
