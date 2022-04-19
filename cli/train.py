@@ -26,7 +26,6 @@ import math
 import os
 import random
 from functools import partial
-import token
 from packaging import version
 
 # Import from third party libraries
@@ -39,7 +38,17 @@ from tqdm.auto import tqdm
 
 import wandb
 import transformers
-from transformers import AutoModelWithLMHead, AutoTokenizer
+
+# not 100% sure which to use here
+# CodeT5 docs suggest roberta tokenizer
+# best to use T5 class from transformers?
+from transformers import (
+    AutoModelWithLMHead,
+    AutoTokenizer,
+    RobertaTokenizer,
+    T5ForConditionalGeneration,
+    DataCollatorForSeq2Seq,
+)
 
 
 # Imports from our module
@@ -329,8 +338,11 @@ def preprocess_function(
 
     model_inputs = source_tokenizer(inputs, max_length=max_seq_length, truncation=True)
 
-    targets = target_tokenizer(targets, max_length=max_seq_length - 1, truncation=True)
-    target_ids = targets["input_ids"]
+    with target_tokenizer.as_target_tokenizer():  # since we're using the same tokenizer, set it to target mode with context manager
+        targets = target_tokenizer(
+            targets, max_length=max_seq_length - 1, truncation=True
+        )
+        target_ids = targets["input_ids"]
 
     ## ───────────────────────────────────── ▼ ─────────────────────────────────────
     # {{{                        --     INLINE Q 1     --
@@ -423,10 +435,10 @@ def evaluate_model(
                 bos_token_id=target_tokenizer.bos_token_id,
                 eos_token_id=target_tokenizer.eos_token_id,
                 pad_token_id=target_tokenizer.pad_token_id,
-                key_padding_mask=key_padding_mask,
+                attention_mask=key_padding_mask,
                 max_length=max_seq_length,
-                kind=generation_type,
-                beam_size=beam_size,
+                # kind=generation_type,
+                # beam_size=beam_size,
             )
             decoded_preds = target_tokenizer.batch_decode(
                 generated_tokens, skip_special_tokens=True
@@ -501,7 +513,8 @@ def main():
     # )
 
     # we can use the same tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("Salesforce/codet5-base")
+    # tokenizer = AutoTokenizer.from_pretrained("Salesforce/codet5-base")
+    tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base")
     source_tokenizer, target_tokenizer = tokenizer, tokenizer
 
     # YOUR CODE ENDS HERE
@@ -520,7 +533,11 @@ def main():
     #     tgt_vocab_size=target_tokenizer.vocab_size,
     # ).to(args.device)
 
-    model = AutoModelWithLMHead.from_pretrained("Salesforce/codet5-base").to(
+    # model = AutoModelWithLMHead.from_pretrained("Salesforce/codet5-base").to(
+    #     args.device
+    # )
+
+    model = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base").to(
         args.device
     )
 
@@ -674,8 +691,10 @@ def main():
             logits = model(
                 input_ids,
                 decoder_input_ids=decoder_input_ids,
-                key_padding_mask=key_padding_mask,
-            )
+                attention_mask=key_padding_mask,  # correct for T5?
+            ).logits.to(
+                args.device
+            )  # returns a seq2seq output object, so we need to access the logits and double check the device
 
             loss = F.cross_entropy(
                 logits.view(-1, logits.shape[-1]),
