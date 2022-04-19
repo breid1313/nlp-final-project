@@ -161,10 +161,7 @@ def parse_args():
         help="Number of attention heads in the Transformer encoder",
     )
     parser.add_argument(
-        "--fcn_hidden",
-        default=2048,
-        type=int,
-        help="Hidden size of the FCN",
+        "--fcn_hidden", default=2048, type=int, help="Hidden size of the FCN",
     )
     parser.add_argument(
         "--max_seq_length",
@@ -206,10 +203,7 @@ def parse_args():
         help="Initial learning rate (after the potential warmup period) to use.",
     )
     parser.add_argument(
-        "--weight_decay",
-        type=float,
-        default=0.0,
-        help="Weight decay to use.",
+        "--weight_decay", type=float, default=0.0, help="Weight decay to use.",
     )
     parser.add_argument(
         "--dropout_rate",
@@ -262,9 +256,7 @@ def parse_args():
         help="Number of steps for the warmup in the lr scheduler.",
     )
     parser.add_argument(
-        "--generation_type",
-        choices=["greedy", "beam_search"],
-        default="beam_search",
+        "--generation_type", choices=["greedy", "beam_search"], default="beam_search",
     )
     parser.add_argument(
         "--beam_size",
@@ -633,9 +625,7 @@ def main():
     ###############################################################################
 
     optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay,
     )
 
     # Scheduler and math around the number of training steps.
@@ -736,8 +726,7 @@ def main():
                 ).sum().item() / num_words_in_batch
 
                 wandb.log(
-                    {"train_batch_word_accuracy": accuracy},
-                    step=global_step,
+                    {"train_batch_word_accuracy": accuracy}, step=global_step,
                 )
 
             if (
