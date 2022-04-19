@@ -277,15 +277,18 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="A seed for reproducible training.",
+        "--seed", type=int, default=None, help="A seed for reproducible training.",
     )
     parser.add_argument(
         "--wandb_project",
         default="transformer_mt",
         help="wandb project name to log metrics to",
+    )
+    parser.add_argument(
+        "--small",
+        default=False,
+        action="store_true",
+        help="Use the small model (for testing) rather than the base model.",
     )
 
     args = parser.parse_args()
@@ -537,9 +540,9 @@ def main():
     #     args.device
     # )
 
-    model = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base").to(
-        args.device
-    )
+    model_name = "Salesforce/codet5-small" if args.small else "Salesforce/codet5-base"
+
+    model = T5ForConditionalGeneration.from_pretrained(model_name).to(args.device)
 
     # YOUR CODE ENDS HERE
 
