@@ -329,7 +329,7 @@ def preprocess_function(
         target_tokenizer: The tokenizer to use for the target language.
     """
     inputs = examples[source_lang]
-    targets = examples[target_lang]
+    targets = [tgt["human_readable"] for tgt in examples[target_lang]]
 
     model_inputs = source_tokenizer(inputs, max_length=max_seq_length, truncation=True)
 
@@ -476,7 +476,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load the datasets
-    raw_datasets = load_dataset("spider")  # spider is the text to sql dataset
+    raw_datasets = load_dataset("wikisql")  # spider is the text to sql dataset
     # raw_datasets = load_dataset('json', data_files='outp.json')
     if "validation" not in raw_datasets:  # spider has this split done already
         # will create "train" and "test" subsets
@@ -555,7 +555,7 @@ def main():
     preprocess_function_wrapped = partial(
         preprocess_function,
         source_lang="question",
-        target_lang="query",
+        target_lang="sql",
         max_seq_length=args.max_seq_length,
         source_tokenizer=tokenizer,
         target_tokenizer=tokenizer,
