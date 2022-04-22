@@ -39,6 +39,18 @@ from tqdm.auto import tqdm
 import wandb
 import transformers
 
+# not 100% sure which to use here
+# CodeT5 docs suggest roberta tokenizer
+# best to use T5 class from transformers?
+from transformers import (
+    AutoModelWithLMHead,
+    AutoTokenizer,
+    RobertaTokenizer,
+    T5ForConditionalGeneration,
+    DataCollatorForSeq2Seq,
+)
+
+
 # Imports from our module
 from transformer_mt.modeling_transformer import TransfomerEncoderDecoderModel
 from transformer_mt import utils
@@ -96,13 +108,13 @@ def parse_args():
     parser.add_argument(
         "--source_lang",
         type=str,
-        required=True,
+        # required=True,
         help="Source language id for translation.",
     )
     parser.add_argument(
         "--target_lang",
         type=str,
-        required=True,
+        # required=True,
         help="Target language id for translation.",
     )
     # Data arguments
@@ -149,10 +161,7 @@ def parse_args():
         help="Number of attention heads in the Transformer encoder",
     )
     parser.add_argument(
-        "--fcn_hidden",
-        default=2048,
-        type=int,
-        help="Hidden size of the FCN",
+        "--fcn_hidden", default=2048, type=int, help="Hidden size of the FCN",
     )
     parser.add_argument(
         "--max_seq_length",
@@ -194,10 +203,7 @@ def parse_args():
         help="Initial learning rate (after the potential warmup period) to use.",
     )
     parser.add_argument(
-        "--weight_decay",
-        type=float,
-        default=0.0,
-        help="Weight decay to use.",
+        "--weight_decay", type=float, default=0.0, help="Weight decay to use.",
     )
     parser.add_argument(
         "--dropout_rate",
@@ -250,9 +256,7 @@ def parse_args():
         help="Number of steps for the warmup in the lr scheduler.",
     )
     parser.add_argument(
-        "--generation_type",
-        choices=["greedy", "beam_search"],
-        default="beam_search",
+        "--generation_type", choices=["greedy", "beam_search"], default="beam_search",
     )
     parser.add_argument(
         "--beam_size",
@@ -265,24 +269,28 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="A seed for reproducible training.",
+        "--seed", type=int, default=None, help="A seed for reproducible training.",
     )
     parser.add_argument(
         "--wandb_project",
         default="transformer_mt",
         help="wandb project name to log metrics to",
     )
+    parser.add_argument(
+        "--small",
+        default=False,
+        action="store_true",
+        help="Use the small model (for testing) rather than the base model.",
+    )
 
     args = parser.parse_args()
 
-    if f"{args.source_lang}_tokenizer" not in os.listdir(args.output_dir):
-        raise ValueError(f"The source tokenizer is not found in {args.output_dir}")
+    # comment these out... we're loading our own tokenizer straight from huggingface
+    # if f"{args.source_lang}_tokenizer" not in os.listdir(args.output_dir):
+    #     raise ValueError(f"The source tokenizer is not found in {args.output_dir}")
 
-    if f"{args.target_lang}_tokenizer" not in os.listdir(args.output_dir):
-        raise ValueError(f"The target tokenizer is not found in {args.output_dir}")
+    # if f"{args.target_lang}_tokenizer" not in os.listdir(args.output_dir):
+    #     raise ValueError(f"The target tokenizer is not found in {args.output_dir}")
 
     return args
 
@@ -298,27 +306,38 @@ def preprocess_function(
     """Tokenize, truncate and add special tokens to the examples. Shift the target text by one token.
 
     Args:
-        examples: A dictionary with a single key "translation",
-            which is a list of dictionaries with keys meaning language codes.
+        examples: A dictionary with all the batch data that we need.
+        keys:
+            "db_id": database id
+            "query": sql query
+            "question": natural language question (english)
+            "query_toks": tokenized query
+            "question_toks": tokenized question
 
             For example:
-            {"translation": [
-                {"en": "Hello", "fr": "Bonjour"},
-                {"en": "How are you?", "fr": "Comment allez-vous?"},
-            ]}
+            {
+            "db_id": ['department_management', ...]
+            "query": ['SELECT COUNT(*) FROM head WHERE age > 56', ...]
+            "question": ['How many heads of the departments are older than 56 ?', ...]
+            "query_toks": [ ['SELECT', 'count', '(', '*', ')', 'FROM', 'head', 'WHERE', 'age', '>', '56'], ... ]
+            "question_toks": [ ['How', 'many', 'heads', 'of', 'the', 'departments', 'are', 'older', 'than', '56', '?'], ... ]
+            }
         source_lang: The language code of the source language.
         target_lang: The language code of the target language.
         max_seq_length: The maximum total sequence length (in tokens) for source and target texts.
         source_tokenizer: The tokenizer to use for the source language.
         target_tokenizer: The tokenizer to use for the target language.
     """
-    inputs = [ex[source_lang] for ex in examples["translation"]]
-    targets = [ex[target_lang] for ex in examples["translation"]]
+    inputs = examples[source_lang]
+    targets = [tgt["human_readable"] for tgt in examples[target_lang]]
 
     model_inputs = source_tokenizer(inputs, max_length=max_seq_length, truncation=True)
 
-    targets = target_tokenizer(targets, max_length=max_seq_length - 1, truncation=True)
-    target_ids = targets["input_ids"]
+    with target_tokenizer.as_target_tokenizer():  # since we're using the same tokenizer, set it to target mode with context manager
+        targets = target_tokenizer(
+            targets, max_length=max_seq_length - 1, truncation=True
+        )
+        target_ids = targets["input_ids"]
 
     ## ───────────────────────────────────── ▼ ─────────────────────────────────────
     # {{{                        --     INLINE Q 1     --
@@ -411,10 +430,10 @@ def evaluate_model(
                 bos_token_id=target_tokenizer.bos_token_id,
                 eos_token_id=target_tokenizer.eos_token_id,
                 pad_token_id=target_tokenizer.pad_token_id,
-                key_padding_mask=key_padding_mask,
+                attention_mask=key_padding_mask,
                 max_length=max_seq_length,
-                kind=generation_type,
-                beam_size=beam_size,
+                # kind=generation_type,
+                # beam_size=beam_size,
             )
             decoded_preds = target_tokenizer.batch_decode(
                 generated_tokens, skip_special_tokens=True
@@ -457,9 +476,9 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load the datasets
-    raw_datasets = load_dataset(args.dataset_name, args.dataset_config_name)
+    raw_datasets = load_dataset("wikisql")  # spider is the text to sql dataset
     # raw_datasets = load_dataset('json', data_files='outp.json')
-    if "validation" not in raw_datasets:
+    if "validation" not in raw_datasets:  # spider has this split done already
         # will create "train" and "test" subsets
         # fix seed to make sure that the split is reproducible
         # note that we should use the same seed here and in create_tokenizer.py
@@ -472,35 +491,50 @@ def main():
     # Part 2: Create the model and load the tokenizers
     ###############################################################################
 
-    src_tokenizer_path = os.path.join(args.output_dir, f"{args.source_lang}_tokenizer")
-    tgt_tokenizer_path = os.path.join(args.output_dir, f"{args.target_lang}_tokenizer")
+    # src_tokenizer_path = os.path.join(args.output_dir, f"{args.source_lang}_tokenizer")
+    # tgt_tokenizer_path = os.path.join(args.output_dir, f"{args.target_lang}_tokenizer")
+
     # Task 4.1: Load source and target tokenizers from the variables above
     # using transformers.PreTrainedTokenizerFast.from_pretrained
     # https://huggingface.co/docs/transformers/v4.16.2/en/main_classes/tokenizer#transformers.PreTrainedTokenizerFast
     # Our implementation is two lines.
     # YOUR CODE STARTS HERE
 
-    source_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
-        pretrained_model_name_or_path=src_tokenizer_path
-    )
-    target_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
-        pretrained_model_name_or_path=tgt_tokenizer_path
-    )
+    # source_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
+    #     pretrained_model_name_or_path=src_tokenizer_path
+    # )
+    # target_tokenizer = transformers.PreTrainedTokenizerFast.from_pretrained(
+    #     pretrained_model_name_or_path=tgt_tokenizer_path
+    # )
+
+    # we can use the same tokenizer
+    # tokenizer = AutoTokenizer.from_pretrained("Salesforce/codet5-base")
+    tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base")
+    source_tokenizer, target_tokenizer = tokenizer, tokenizer
+
     # YOUR CODE ENDS HERE
 
     # Task 4.2: Create TransformerEncoderDecoder object
     # Provide all of the TransformerLM initialization arguments from args.
     # Move model to the device we use for training
     # YOUR CODE STARTS HERE
-    model = TransfomerEncoderDecoderModel(
-        num_layers=args.num_layers,
-        hidden=args.hidden_size,
-        num_heads=args.num_heads,
-        fcn_hidden=args.fcn_hidden,
-        max_seq_len=args.max_seq_length,
-        src_vocab_size=source_tokenizer.vocab_size,
-        tgt_vocab_size=target_tokenizer.vocab_size,
-    ).to(args.device)
+    # model = TransfomerEncoderDecoderModel(
+    #     num_layers=args.num_layers,
+    #     hidden=args.hidden_size,
+    #     num_heads=args.num_heads,
+    #     fcn_hidden=args.fcn_hidden,
+    #     max_seq_len=args.max_seq_length,
+    #     src_vocab_size=source_tokenizer.vocab_size,
+    #     tgt_vocab_size=target_tokenizer.vocab_size,
+    # ).to(args.device)
+
+    # model = AutoModelWithLMHead.from_pretrained("Salesforce/codet5-base").to(
+    #     args.device
+    # )
+
+    model_name = "Salesforce/codet5-small" if args.small else "Salesforce/codet5-base"
+
+    model = T5ForConditionalGeneration.from_pretrained(model_name).to(args.device)
 
     # YOUR CODE ENDS HERE
 
@@ -520,11 +554,11 @@ def main():
     # It is better to do this instead of defining a function right here (as we did in the previous homework)
     preprocess_function_wrapped = partial(
         preprocess_function,
-        source_lang=args.source_lang,
-        target_lang=args.target_lang,
+        source_lang="question",
+        target_lang="sql",
         max_seq_length=args.max_seq_length,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
+        source_tokenizer=tokenizer,
+        target_tokenizer=tokenizer,
     )
 
     processed_datasets = raw_datasets.map(
@@ -539,7 +573,7 @@ def main():
     train_dataset = processed_datasets["train"]
     eval_dataset = (
         processed_datasets["validation"]
-        if "validaion" in processed_datasets
+        if "validation" in processed_datasets
         else processed_datasets["test"]
     )
 
@@ -591,9 +625,7 @@ def main():
     ###############################################################################
 
     optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay,
     )
 
     # Scheduler and math around the number of training steps.
@@ -652,8 +684,10 @@ def main():
             logits = model(
                 input_ids,
                 decoder_input_ids=decoder_input_ids,
-                key_padding_mask=key_padding_mask,
-            )
+                attention_mask=key_padding_mask,  # correct for T5?
+            ).logits.to(
+                args.device
+            )  # returns a seq2seq output object, so we need to access the logits and double check the device
 
             loss = F.cross_entropy(
                 logits.view(-1, logits.shape[-1]),
@@ -692,8 +726,7 @@ def main():
                 ).sum().item() / num_words_in_batch
 
                 wandb.log(
-                    {"train_batch_word_accuracy": accuracy},
-                    step=global_step,
+                    {"train_batch_word_accuracy": accuracy}, step=global_step,
                 )
 
             if (
