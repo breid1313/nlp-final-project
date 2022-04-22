@@ -3,7 +3,7 @@ import torch
 from transformers import T5ForConditionalGeneration, RobertaTokenizer
 
 max_seq_length = 128
-model_dir = "txt_sql_output_dir/old"
+model_dir = "txt_sql_output_dir/"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = T5ForConditionalGeneration.from_pretrained(
