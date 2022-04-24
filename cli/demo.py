@@ -14,16 +14,16 @@ tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base")
 
 
 def question_to_sql(question):
-    input_ids = tokenizer(
+    inputs = tokenizer(
         question, max_length=max_seq_length, truncation=True, return_tensors="pt"
-    ).input_ids
+    )
 
     pred = model.generate(
-        input_ids,
+        inputs.input_ids,
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
-        # attention_mask=mask,
+        attention_mask=inputs.attention_mask,
         max_length=max_seq_length,
     )
 
