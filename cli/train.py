@@ -308,19 +308,17 @@ def preprocess_function(
     Args:
         examples: A dictionary with all the batch data that we need.
         keys:
-            "db_id": database id
-            "query": sql query
+            "phase": query difficulty?
             "question": natural language question (english)
-            "query_toks": tokenized query
-            "question_toks": tokenized question
+            "table": resulting rows from the real database?
+            "sql": dict of sql and metadata. the query is under the 'human-readable' key
 
             For example:
             {
-            "db_id": ['department_management', ...]
-            "query": ['SELECT COUNT(*) FROM head WHERE age > 56', ...]
-            "question": ['How many heads of the departments are older than 56 ?', ...]
-            "query_toks": [ ['SELECT', 'count', '(', '*', ')', 'FROM', 'head', 'WHERE', 'age', '>', '56'], ... ]
-            "question_toks": [ ['How', 'many', 'heads', 'of', 'the', 'departments', 'are', 'older', 'than', '56', '?'], ... ]
+            "phase": [2,2,2,1,1,1,2,...]
+            "question": ['Who won the gold when Jules van Dyk Belgium won bronze?', ...]
+            "table": [{'header': ...}, ...]
+            "sql": [{'human_readable': 'SELECT Gold FROM table WHERE Bronze = jules van dyk belgium', ...}, ...]
             }
         source_lang: The language code of the source language.
         target_lang: The language code of the target language.
