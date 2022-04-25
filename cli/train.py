@@ -326,8 +326,10 @@ def preprocess_function(
         source_tokenizer: The tokenizer to use for the source language.
         target_tokenizer: The tokenizer to use for the target language.
     """
-    inputs = examples[source_lang]
-    targets = [tgt["human_readable"] for tgt in examples[target_lang]]
+    inputs = examples[source_lang]  # examples['question']
+    targets = [
+        tgt["human_readable"] for tgt in examples[target_lang]
+    ]  # list of examples['sql']['human_readable']
 
     model_inputs = source_tokenizer(inputs, max_length=max_seq_length, truncation=True)
 
