@@ -71,7 +71,8 @@ transformers.utils.logging.set_verbosity_warning()
 # To compute BLEU we will use Huggingface Datasets implementation of it
 # Sacrebleu is a flavor of BLEU that standardizes some of the BLEU parameters.
 bleu = datasets.load_metric("sacrebleu")
-
+exact_match = datasets.load_metric("exact_match")
+# bleu._info()
 
 def parse_args():
     """This function creates argument parser and parses the scrip input arguments.
@@ -450,11 +451,14 @@ def evaluate_model(
             )
 
             bleu.add_batch(predictions=decoded_preds, references=decoded_labels)
+            exact_match.add_batch(predictions=decoded_preds, references=decoded_labels)
 
     model.train()
-    eval_metric = bleu.compute()
+    eval_metric_1 = bleu.compute()
+    eval_metric_2 = exact_match.compute()
     evaluation_results = {
-        "bleu": eval_metric["score"],
+        "bleu": eval_metric_1["score"],
+        "exact_match": eval_metric_2["exact_match"],
         "generation_length": n_generated_tokens / len(dataloader.dataset),
     }
     return evaluation_results, decoded_preds, decoded_labels, input_ids
@@ -751,6 +755,7 @@ def main():
                 wandb.log(
                     {
                         "eval/bleu": eval_results["bleu"],
+                        "eval/exact_match": eval_results["exact_match"],
                         "eval/generation_length": eval_results["generation_length"],
                     },
                     step=global_step,
